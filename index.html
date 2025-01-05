@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Species Map</title>
+
+    <!-- Leaflet CSS -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"
+    />
+
+    <!-- Styling for the map container -->
+    <style>
+      #map {
+        height: 100vh;
+        width: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+
+    <!-- PapaParse for CSV parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+
+    <script>
+      // Adjusted bounds to cover a larger area of Mexico and the sea
+      var bounds = [
+        [16.0, -94.0], // Southwest corner (expanded)
+        [24.0, -84.0], // Northeast corner (expanded)
+      ];
+
+      // Initialize the map with updated center and zoom level
+      var speciesMap = L.map("map", {
+        center: [20.0, -89.0], // Center the map on the Yucatán Peninsula
+        zoom: 8, // Slightly wider zoom level
+        minZoom: 8, // Adjust minimum zoom
+        maxBounds: bounds, // Restrict the map to the expanded bounds
+        maxBoundsViscosity: 1.0, // Make the map 'bounce' at the edge
+      });
+
+      // Use CartoDB Positron No Labels as the tile layer
+      var CartoDB_PositronNoLabels = L.tileLayer(
+        "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
+        {
+          attribution:
+            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+          subdomains: "abcd",
+          maxZoom: 20,
+        }
+      ).addTo(speciesMap);
+
+      // Function to parse and merge data
+      function parseAndAddData() {
+        let speciesData = {};
+        let cenotesData = {};
+
+        // Load species data
+        Papa.parse("data_species.csv", {
+          download: true,
+          header: true,
+          complete: function (results) {
+            speciesData = results.data; // Store species data
+            loadCenotesData(); // Proceed to load cenotes data
+          },
+        });
+
+        function loadCenotesData() {
+          // Load cenotes data
+          Papa.parse("data_cenotes.csv", {
+            download: true,
+            header: true,
+            complete: function (results) {
+              cenotesData = results.data; // Store cenotes data
+              addMarkersToMap(); // Add markers to the map
+            },
+          });
+        }
+
+        function getColor(infoCount) {
+          // Define color scale
+          if (infoCount >= 5) return "green"; // Most information
+          if (infoCount === 4) return "yellowgreen";
+          if (infoCount === 3) return "yellow";
+          if (infoCount === 2) return "orange";
+          if (infoCount === 1) return "red"; // Least information
+          return "gray"; // No information
+        }
+
+        function addMarkersToMap() {
+          // Process both datasets and merge
+          speciesData.forEach(function (speciesRow) {
+            var lat = parseFloat(speciesRow["latitude"]);
+            var lon = parseFloat(speciesRow["longitud"]);
+            var species = [];
+            var cenotes = [];
+
+            // Extract species data
+            Object.keys(speciesRow).forEach(function (key) {
+              if (
+                key !== "latitude" &&
+                key !== "longitud" &&
+                speciesRow[key] == 1
+              ) {
+                species.push(key);
+              }
+            });
+
+            // Find corresponding cenotes data for the same coordinates
+            var matchingCenoteRow = cenotesData.find(function (cenoteRow) {
+              return (
+                parseFloat(cenoteRow["latitude"]) === lat &&
+                parseFloat(cenoteRow["longitud"]) === lon
+              );
+            });
+
+            // Extract cenotes data
+            if (matchingCenoteRow) {
+              Object.keys(matchingCenoteRow).forEach(function (key) {
+                if (
+                  key !== "latitude" &&
+                  key !== "longitud" &&
+                  matchingCenoteRow[key] == 1
+                ) {
+                  cenotes.push(key);
+                }
+              });
+            }
+
+            // Count total information
+            var totalInfo = species.length + cenotes.length;
+
+            // Assign popup text
+            var popupText =
+              (species.length
+                ? "Especies: " + species.join(", ") + "<br>"
+                : "No hay especies para esta coordenada<br>") +
+              (cenotes.length
+                ? "Cenote: " + cenotes.join(", ")
+                : "No hay cenotes para esta coordenada");
+
+            // Get color based on the amount of information
+            var pointColor = getColor(totalInfo);
+
+            // Create a circle marker with a popup
+            L.circleMarker([lat, lon], {
+              radius: 5,
+              color: pointColor, // Border color
+              fillColor: pointColor, // Fill color
+              fillOpacity: 0.6,
+            })
+              .bindPopup(popupText)
+              .addTo(speciesMap);
+          });
+        }
+      }
+
+      // Call the function to parse and add data
+      parseAndAddData();
+
+      // Define smaller grid step sizes for Yucatán
+      var latStep = 0.125; // Smaller grid step for latitude
+      var lonStep = 0.125; // Smaller grid step for longitude
+
+      // Draw horizontal lines (latitudes) - extended region
+      for (var lat = 16.0; lat <= 24.0; lat += latStep) {
+        L.polyline(
+          [
+            [lat, -94.0],
+            [lat, -84.0],
+          ],
+          { color: "gray", weight: 1 }
+        ).addTo(speciesMap);
+      }
+
+      // Draw vertical lines (longitudes) - extended region
+      for (var lon = -94.0; lon <= -84.0; lon += lonStep) {
+        L.polyline(
+          [
+            [16.0, lon],
+            [24.0, lon],
+          ],
+          { color: "gray", weight: 1 }
+        ).addTo(speciesMap);
+      }
+    </script>
+    <p>&#169; Abraham Licona</p>
+  </body>
+</html>
